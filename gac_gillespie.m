@@ -4,7 +4,7 @@
 % clump is effectively like another species.  doens't scale very well.
 %
 
-function [V_arr,total_pop_arr,tvec,num_clumps_arr] = gac_gillespie(lr,la,lc,ls,Tmax,n0,nu_A,nu_F,lwritetxt,txtdir)
+function [V_arr,total_pop_arr,tvec,num_clumps_arr] = gac_gillespie(lr,la,lc,ls,Tmax,n0,nu_A,nu_F,lwritetxt,txtdir,txtname)
 
 %% default values for input parameters
 
@@ -55,7 +55,12 @@ end
 
 % path to dir for saving txt file
 if ~exist('txtdir','var')||isempty(txtdir)
-    txtpath = pwd;
+    txtdir = pwd;
+end
+
+% name for saving txt file
+if ~exist('txtname','var')||isempty(txtname)
+    txtname = 'gacout';
 end
 
 % timestep for deterministic growth
@@ -110,12 +115,14 @@ disp_time_increment = 1;
 max_total_pop = 10^(4);                       
 
 % logical for printing progress to screen
-l_print_progress = false;
+l_print_progress = true;
 
 % needs testing
 if lwritetxt
     
-    txtname = 'gacout.txt';
+    if ~exist(txtdir,'dir')
+        mkdir(txtdir);
+    end
     
     fid = fopen([txtdir filesep txtname],'a');
     
@@ -214,9 +221,7 @@ while t < Tmax
     
     % needs testing
     if lwritetxt
-        
-        txtname = 'gacout.txt';
-        
+                
         fid = fopen([txtdir filesep txtname],'a');
                 
         outarr = [t,V_arr];
