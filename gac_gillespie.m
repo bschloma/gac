@@ -4,7 +4,7 @@
 % clump is effectively like another species.  doens't scale very well.
 %
 
-function [V_arr,total_pop_arr,tvec] = gac_gillespie(lr,la,lc,ls,Tmax,n0,nu_A,nu_F)
+function [V_arr,total_pop_arr,tvec,num_clumps_arr] = gac_gillespie(lr,la,lc,ls,Tmax,n0,nu_A,nu_F,lwritetxt,txtdir)
 
 %% default values for input parameters
 
@@ -48,6 +48,16 @@ if ~exist('nu_F','var')||isempty(nu_F)
     nu_F = 2/3;
 end
 
+% logical for saving to txt file
+if ~exist('lwritetxt','var')||isempty(lwritetxt)
+    lwritetxt = false;
+end
+
+% path to dir for saving txt file
+if ~exist('txtdir','var')||isempty(txtdir)
+    txtpath = pwd;
+end
+
 % timestep for deterministic growth
 % if ~exist('dt','var')||isempty(dt)
 %     dt = .00001;
@@ -73,6 +83,9 @@ end
 % array for keeping track of total population size
 total_pop_arr = sum(n0);
 
+% array for keeping track of number of clumps over time
+num_clumps_arr = n0;
+
 % pregenerate lots of random numbers for speed.
 number_of_random_numbers_to_pre_generate = round(1000);
 lots_of_random_numbers = rand(1,number_of_random_numbers_to_pre_generate);
@@ -97,9 +110,27 @@ disp_time_increment = 1;
 max_total_pop = 10^(4);                       
 
 % logical for printing progress to screen
-l_print_progress = true;
+l_print_progress = false;
 
-
+% needs testing
+if lwritetxt
+    
+    txtname = 'gacout.txt';
+    
+    fid = fopen([txtdir filesep txtname],'a');
+    
+    fprintf(fid,'%s %s\n','time','cluster sizes');
+    
+    outarr = [t,V_arr];
+    
+    format_str = [repmat('%f ',1,numel(outarr)-1), '%f\n'];
+    
+    fprintf(fid,format_str,outarr);
+    
+    fclose(fid);
+    
+end
+    
 %% main simulation.  loop over time.
 while t < Tmax 
         
@@ -170,7 +201,7 @@ while t < Tmax
     reaction_id = find(random_number < cumsum(lambda_arr)./lambda_total,1);
     
     if ~isempty(reaction_id)
-        [V_arr,tvec,total_pop_arr] = gac_gillespie_update();
+        [V_arr,tvec,total_pop_arr,num_clumps_arr] = gac_gillespie_update();
     end
     
     t = t + delta_t;
@@ -181,6 +212,23 @@ while t < Tmax
     
     %total_pop_arr = [total_pop_arr, sum(V_arr)];
     
+    % needs testing
+    if lwritetxt
+        
+        txtname = 'gacout.txt';
+        
+        fid = fopen([txtdir filesep txtname],'a');
+                
+        outarr = [t,V_arr];
+        
+        format_str = [repmat('%f ',1,numel(outarr)-1), '%f\n'];
+        
+        fprintf(fid,format_str,outarr);
+        
+        fclose(fid);
+        
+    end
+    
     if isempty(V_arr)
         return
     end
@@ -188,7 +236,7 @@ while t < Tmax
 end
     
     % gillespie update function.  nested to inherit random numbers
-    function [V_arr_out,tvec_out,tot_pop_out] = gac_gillespie_update()
+    function [V_arr_out,tvec_out,tot_pop_out,num_clumps_out] = gac_gillespie_update()
         
         this_label = all_labels(reaction_id);
         
@@ -241,6 +289,7 @@ end
         numsteps = numel(t:dt:(t+delta_t));
         
         tmp_tot_pop = zeros(1,numsteps);
+        tmp_num_clumps = zeros(1,numsteps);
         
         for s = 1:numsteps
         
@@ -252,10 +301,15 @@ end
             
             % update tmp_totpop
             tmp_tot_pop(s) = sum(V_arr_out);
+            
+            % update tmp_num_clumps
+            tmp_num_clumps(s) = numel(V_arr_out);
         
         end
         
         tot_pop_out = [total_pop_arr, tmp_tot_pop];
+        
+        num_clumps_out = [num_clumps_arr, tmp_num_clumps];
                   
     end
 
