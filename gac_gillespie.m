@@ -1,7 +1,53 @@
-% gac.m
-% Growth and Aggregation of Clusters model, attempting to implement via
-% Gillespie's algorithm.  not sure if it will produce gains though, each
-% clump is effectively like another species.  doens't scale very well.
+% Program:  gac_gillespie.m
+% 
+% Summary:  Growth and Aggregation of Clusters model, implemented with
+%           Gillespie's direct method.  The main object is an array of
+%           cluster sizes.  Clusters are subject to 4 rate processes,
+%           aggregation, fragmentation, growth, and dispersal, each with a
+%           rate parameter that can depend on cluster size.  Since growth 
+%           is the fastest of the rates, and we don't care about
+%           demographic stochasticity, it is approximated as a
+%           deterministic process.  This means that clusters sizes are no
+%           longer integers.
+%
+%           The simulation starts from a specified initial condition and
+%           runs for a specified amount of time.  A subset of the
+%           simulation results are output as arrays and an option exists to
+%           write every cluster size at every time point to a txt file.
+%
+% Inputs:   lr - (float) growth rate
+%           la - (float) aggregation rate
+%           lc - (float) collapse/dispersal rate
+%           ls - (float) fragmentation/sprout rate
+%           Tmax - (float) simulation time to exit
+%           n0 - (int or 1x[number of clusters] array of floats/ints) specifies initial
+%               conditions. if numel(n0)=1, simulation starts with round(n0)
+%               monomers.  if numel(n0) > 1, n0 is taken to be the initial
+%               cluster size array.
+%           nu_A - (float) exponent determining how the aggregation rate
+%                   scales with cluster size via (agg rate) = la*(cluster
+%                   size)^nu_A.
+%           nu_F - (float) exponent determining how the fragmentation rate
+%                   scales with cluster size via (frag rate) = la*(cluster
+%                   size)^nu_F.
+%           lwritetxt - (logical) 0 for not writing to txt file, 1 for yes.
+%           txtdir - (str) full path to dir to save txt files
+%           txtname - (str) name of txt file
+%
+% Outputs:  V_arr - (1x(number of clusters) array of floats) sizes of all
+%                   clusters at the final time point
+%           total_pop_arr - (1x(number of time steps) array of floats)
+%                   total population (sum of all cluster sizes) over time
+%           tvec - (1x(number of time steps) array of floats) array of
+%                   times at which reactions occured
+%           num_clumps_arr - (1x(number of time steps)) number of clusters
+%                   over time
+%
+% Author:   Brandon Schlomann
+%
+% Date:     Summer 2018 - first written
+%
+% VCS:      github.com/bschloma/gac
 %
 
 function [V_arr,total_pop_arr,tvec,num_clumps_arr] = gac_gillespie(lr,la,lc,ls,Tmax,n0,nu_A,nu_F,lwritetxt,txtdir,txtname)
@@ -63,11 +109,6 @@ if ~exist('txtname','var')||isempty(txtname)
     txtname = 'gacout';
 end
 
-% timestep for deterministic growth
-% if ~exist('dt','var')||isempty(dt)
-%     dt = .00001;
-% end
-
 % shuffle random number generator
 rng('shuffle');
 
@@ -76,7 +117,7 @@ rng('shuffle');
 
 % main object of the simulation:  array of cluster volumes
 if numel(n0)==1
-    V_arr = ones(1,n0);
+    V_arr = ones(1,round(n0));
 elseif size(n0,1) > 1
     disp('gac error:  initial cluster size array n0 must have dim 1xM');
     return
@@ -100,103 +141,121 @@ n = 0;
 
 % time
 t = 0;
-
 tvec = t;
 
 % hour marker
 disp_time_marker = 1;
 disp_time_increment = 1;
 
-% Aggregation matrix
-%A_mat = zeros(numel(V_arr));
 
 %% fixed parameters
-% carrying capacity of whole system.  regulates cluster growth in 'global' mode.  
+% carrying capacity, sets maximum total population size.  
 max_total_pop = 10^(4);                       
 
 % logical for printing progress to screen
 l_print_progress = true;
 
-% needs testing
+% for writing to txt file, set things up, print a header and time zero data
 if lwritetxt
     
+    % if desired save directory doesn't exist, make it
     if ~exist(txtdir,'dir')
         mkdir(txtdir);
     end
     
+    % handle to txt file, open in append mode
     fid = fopen([txtdir filesep txtname],'a');
     
+    % write header
     fprintf(fid,'%s %s\n','time','cluster sizes');
     
+    % time zero data to write
     outarr = [t,V_arr];
     
+    % format string for data
     format_str = [repmat('%f ',1,numel(outarr)-1), '%f\n'];
     
+    % write time zero data
     fprintf(fid,format_str,outarr);
     
+    % close the file
     fclose(fid);
     
 end
     
 %% main simulation.  loop over time.
 while t < Tmax 
-        
-    
+            
     % print update to console
     if l_print_progress && t >= disp_time_marker
         disp(['time = ' num2str(t) ' number of clusters = ' num2str(numel(V_arr))])
         disp_time_marker = disp_time_marker + disp_time_increment;
     end   
-    
-      
+          
     % compute probability of collapse as a function of cluster volume.
     % here, the relationship is linear in linear length dimension.
     lambda_C = lc.*(V_arr).^(1/3);
     
+    % create an array of ids labelling every possible collapse reaction
     ids_for_collapse = 1:numel(lambda_C);
     
+    % create an accesory array that labels (1) these reactions as "collapse"
     label_for_lambda_C = 1.*ones(1,numel(lambda_C));
     
-
     % compute the probability of aggregation in this timestep.
-    % made product kernel 5/1/18
-    %lambda_A = la.*dt.*V_arr.^nu_A;
+    % A_mat is a lower triangular array that keeps track of the
+    % proababilities for every possible aggregation reaction.
     A_mat = updateA_mat();
+    
+    % extract the non-zero rates into a linear array
     lambda_A = A_mat(A_mat>0); 
     
+    % double check dimensions
     if size(lambda_A,1) > 1
         lambda_A = lambda_A';
     end
     
+    % create labels (2) that keep track of these possible reactions as
+    % "aggregation"
     label_for_lambda_A = 2.*ones(1,numel(lambda_A));
     
-    %[rows_of_nonzero_Amat,cols_of_nonzero_Amat] = find(A_mat>0);
+    % keep track of the indices of the non-zero reactions in A_mat's
+    % coordinates.  this will be used to identify the clusters in V_arr
+    % that are participating in the reaction.
     lin_inds_for_Amat = find(A_mat>0);
     
+    % assign ids to each of the possible aggregation reactions.
     ids_for_agg = 1:numel(lambda_A);
-    
-    
+        
     % compute probability of sprouting.  require clusters to be of at least
     % size 2 to sprout.
     lambda_F = ls.*(V_arr >= 2).*(V_arr).^(nu_F);
     
+    % assign ids to each of the possible fragmentation reactions.
     ids_for_frag = 1:numel(lambda_F);
     
+    % assemble all of the reaction ids into a single linear array
     ids_arr = [ids_for_collapse, ids_for_agg, ids_for_frag];
     
+    % create labels (3) that keep track of these possible reactions as
+    % "fragmentation" 
     label_for_lambda_F = 3.*ones(1,numel(lambda_F));
-        
+    
+    % assemble all reaction probability rates into a single linear array
     lambda_arr = [lambda_C, lambda_A, lambda_F];
     
+    % compute total proabability rate of a reaction happening
     lambda_total = sum(lambda_arr);
     
+    % assemble all labels into a single linear array
     all_labels = [label_for_lambda_C, label_for_lambda_A, label_for_lambda_F]; 
     
-    % choose reaction time
+    % choose reaction time based on the total probability rate of a
+    % reaction happening
     delta_t = exprnd(1./lambda_total);
     
-    % choose next reaction
-   % collect a random number.  If we've run out of pregenerated ones,
+    % choose next reaction using the array of all possible reaction rates
+    % collect a random number.  If we've run out of pregenerated ones,
     % generate some new ones.
     if n + 1 < number_of_random_numbers_to_pre_generate
         random_number = lots_of_random_numbers(n+1);
@@ -205,35 +264,40 @@ while t < Tmax
         random_number = rand();
     end
     
+    % get the id of the chosen reaction
     reaction_id = find(random_number < cumsum(lambda_arr)./lambda_total,1);
     
+    % if there's a reaction to happen, call the update routine and update
+    % the output arrays
     if ~isempty(reaction_id)
         [V_arr,tvec,total_pop_arr,num_clumps_arr] = gac_gillespie_update();
     end
     
+    % update time
     t = t + delta_t;
-    
-    %tvec = [tvec t];
-    
-    
-    
-    %total_pop_arr = [total_pop_arr, sum(V_arr)];
-    
-    % needs testing
+       
+    % if desired, write time and cluster size array to txt file
     if lwritetxt
-                
+        
+        % open the file in append mode
         fid = fopen([txtdir filesep txtname],'a');
-                
+        
+        % data to be written
         outarr = [t,V_arr];
         
+        % format string for data
         format_str = [repmat('%f ',1,numel(outarr)-1), '%f\n'];
         
+        % write the data
         fprintf(fid,format_str,outarr);
         
+        % close the file
         fclose(fid);
         
     end
     
+    % if the population went extinct (no more clusters), stop the
+    % simulation
     if isempty(V_arr)
         return
     end
@@ -243,38 +307,44 @@ end
     % gillespie update function.  nested to inherit random numbers
     function [V_arr_out,tvec_out,tot_pop_out,num_clumps_out] = gac_gillespie_update()
         
+        % collect the label that denotes which reaction is happening
         this_label = all_labels(reaction_id);
         
+        % create and output variable.  necessary to avoid referencing issues
+        % with the nested function.
         V_arr_out = V_arr;
         
+        % update cluster size array based on which reaction is happening
         switch this_label
             case 1
                 % collapse
 
                 % remove clusters that have collapsed from the cluster array.
-                %V_arr = V_arr(random_numbers >= lambda_arr(reaction_id));
                 V_arr_out(reaction_id) = [];
                 
             case 2
                 % aggregation
                 
-                
                 % find ids of clusters that will aggregate in this timestep
                 agg_id = ids_arr(reaction_id);
                 
+                % get index of this aggregation reaction in A_mat
                 lin_ind_of_this_agg = lin_inds_for_Amat(agg_id);
                 
+                % backout the ids of clusters involved in this aggregation
+                % reaction (row + column of A_mat)
                 [agg_row,agg_col] = ind2sub(size(A_mat),lin_ind_of_this_agg);
                 
+                % one of the clusters increases in size due to aggregation
                 V_arr_out(agg_row) = V_arr_out(agg_row) + V_arr_out(agg_col);
                 
+                % the other one is removed from the array
                 V_arr_out(agg_col) = [];
-                
-                
-                
+                              
             case 3
                 %% sprout//fragment
                 
+                % get id of cluster that will fragment
                 frag_id = ids_arr(reaction_id);
                 
                 % reduce sprouted clusters by 1
@@ -288,14 +358,22 @@ end
                 
         %% growth (deterministic)
         
+        % construct a timestep for numerical integration.  can change
+        % resolution here for better or worse accuracy.
         dt = delta_t./10;
+        
+        % update time array.  new variable name is needed to avoid
+        % referencing issues with the nested function.
         tvec_out = [tvec tvec(end):dt:(t+delta_t)];
         
+        % number of steps taken between reactions
         numsteps = numel(t:dt:(t+delta_t));
         
+        % temporary arrays to be updated during numerical integration
         tmp_tot_pop = zeros(1,numsteps);
         tmp_num_clumps = zeros(1,numsteps);
         
+        % loop over time and update according to growth equation
         for s = 1:numsteps
         
             % grow all clusters in one deterministic vectorized step
@@ -312,28 +390,30 @@ end
         
         end
         
+        % append total population array
         tot_pop_out = [total_pop_arr, tmp_tot_pop];
         
+        % append total number of clumps array
         num_clumps_out = [num_clumps_arr, tmp_num_clumps];
                   
     end
 
     
+    % function for updating aggregation matrix.  make new everytime and
+    % fill entries.
     function A_mat = updateA_mat()
         
+        % make a square matrix based on the cluster size array
         A_mat = zeros(numel(V_arr));
         
-        %IDs = 1:numel(V_arr);
-        
-        %for i = 1:numel(IDs)
+        % loop over columns
         for i = 1:(numel(V_arr)-1)
-           
-            %culled_IDs = IDs(IDs~=i);
-            
-            %for j = 1:numel(culled_IDs)
+          
+            % loop over rows
             for j = (i+1):numel(V_arr)
                 
-                %A_mat(j,i) = la.*(V_arr(i).*V_arr(IDs(j))).^nu_A;
+                % fill entry accoring to generalized homogeneous aggregation
+                % kernel
                 A_mat(j,i) = la.*(V_arr(i).*V_arr(j)).^nu_A;
                 
             end
