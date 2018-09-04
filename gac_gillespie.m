@@ -153,7 +153,7 @@ disp_time_increment = 1;
 max_total_pop = 10^(4);                       
 
 % logical for printing progress to screen
-l_print_progress = true;
+l_print_progress = false;
 
 % for writing to txt file, set things up, print a header and time zero data
 if lwritetxt
