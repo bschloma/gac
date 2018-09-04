@@ -130,7 +130,7 @@ end
 total_pop_arr = sum(n0);
 
 % array for keeping track of number of clumps over time
-num_clumps_arr = n0;
+num_clumps_arr = numel(n0);
 
 % pregenerate lots of random numbers for speed.
 number_of_random_numbers_to_pre_generate = round(1000);
@@ -255,27 +255,49 @@ while t < Tmax
     delta_t = exprnd(1./lambda_total);
     
     % choose next reaction using the array of all possible reaction rates
-    % collect a random number.  If we've run out of pregenerated ones,
-    % generate some new ones.
-    if n + 1 < number_of_random_numbers_to_pre_generate
-        random_number = lots_of_random_numbers(n+1);
-        n = n + 1;
-    else
-        random_number = rand();
-    end
+    % BUT if next reaction time is greater than Tmax, don't execute it,
+    % only update with growth.  this is denoted with reaction_id = 0.
+    if t+delta_t <= Tmax
+        
+        % collect a random number.  If we've run out of pregenerated ones,
+        % generate some new ones.
+        if n + 1 < number_of_random_numbers_to_pre_generate
+            random_number = lots_of_random_numbers(n+1);
+            n = n + 1;
+        else
+            random_number = rand();
+        end
+        
+        % get the id of the chosen reaction
+        reaction_id = find(random_number < cumsum(lambda_arr)./lambda_total,1);
     
-    % get the id of the chosen reaction
-    reaction_id = find(random_number < cumsum(lambda_arr)./lambda_total,1);
+    else
+        reaction_id = 0;
+        
+    end
+
     
     % if there's a reaction to happen, call the update routine and update
     % the output arrays
     if ~isempty(reaction_id)
+             
         [V_arr,tvec,total_pop_arr,num_clumps_arr] = gac_gillespie_update();
+        
     end
     
     % update time
     t = t + delta_t;
-       
+    
+    % if the last reaction was dropped because it was scheduled to happen
+    % after Tmax, cull output arrays down to Tmax
+    if reaction_id==0
+        
+        total_pop_arr = total_pop_arr(tvec<=Tmax);
+        num_clumps_arr = num_clumps_arr(tvec<=Tmax);
+        tvec = tvec(tvec<=Tmax);
+        
+    end
+         
     % if desired, write time and cluster size array to txt file
     if lwritetxt
         
@@ -308,13 +330,58 @@ end
     function [V_arr_out,tvec_out,tot_pop_out,num_clumps_out] = gac_gillespie_update()
         
         % collect the label that denotes which reaction is happening
-        this_label = all_labels(reaction_id);
+        if reaction_id > 0
+            this_label = all_labels(reaction_id);
+        else
+            this_label  = 0;
+        end
         
         % create and output variable.  necessary to avoid referencing issues
         % with the nested function.
         V_arr_out = V_arr;
         
-        % update cluster size array based on which reaction is happening
+        %% growth (deterministic) - do this first
+        
+        % construct a timestep for numerical integration.  can change
+        % resolution here for better or worse accuracy.  Base timestep is
+        % .01, if time between reactions gets small, use a smaller step.
+        dt = min(delta_t./10,.01);
+        
+        % number of steps taken between reactions
+        numsteps = floor((delta_t - dt)/dt);
+        
+        % update time array.  new variable name is needed to avoid
+        % referencing issues with the nested function.
+        tvec_out = [tvec, linspace(t+dt, t+delta_t, numsteps)];
+            
+        % temporary arrays to be updated during numerical integration
+        tmp_tot_pop = zeros(1,numsteps);
+        tmp_num_clumps = zeros(1,numsteps);
+        
+        % loop over time and update according to growth equation
+        for s = 1:numsteps
+        
+            % grow all clusters in one deterministic vectorized step
+            V_arr_out = V_arr_out + dt.*lr.*V_arr_out.*(1-sum(V_arr_out)./max_total_pop);
+            
+            % if clusters die out, remove them
+            %V_arr_out = V_arr_out(V_arr_out>=1);
+            
+            % update tmp_totpop
+            tmp_tot_pop(s) = sum(V_arr_out);
+            
+            % update tmp_num_clumps
+            tmp_num_clumps(s) = numel(V_arr_out);
+        
+        end
+        
+        % append total population array
+        tot_pop_out = [total_pop_arr, tmp_tot_pop];
+        
+        % append total number of clumps array
+        num_clumps_out = [num_clumps_arr, tmp_num_clumps];
+        
+        %% update cluster size array based on which reaction is happening
         switch this_label
             case 1
                 % collapse
@@ -342,7 +409,7 @@ end
                 V_arr_out(agg_col) = [];
                               
             case 3
-                %% sprout//fragment
+                % sprout//fragment
                 
                 % get id of cluster that will fragment
                 frag_id = ids_arr(reaction_id);
@@ -352,49 +419,20 @@ end
                 
                 % add this collection of new single cells to cluster array
                 V_arr_out = [V_arr_out, 1];
+            case 0
+                
+                % do nothing
                 
         end
                 
                 
-        %% growth (deterministic)
+        %% final output
+        % update population array based on reaction
+        tot_pop_out(end) =  sum(V_arr_out);
         
-        % construct a timestep for numerical integration.  can change
-        % resolution here for better or worse accuracy.
-        dt = delta_t./10;
+        % update total number of clumps array based on reaction
+        num_clumps_out(end) =  numel(V_arr_out); 
         
-        % update time array.  new variable name is needed to avoid
-        % referencing issues with the nested function.
-        tvec_out = [tvec tvec(end):dt:(t+delta_t)];
-        
-        % number of steps taken between reactions
-        numsteps = numel(t:dt:(t+delta_t));
-        
-        % temporary arrays to be updated during numerical integration
-        tmp_tot_pop = zeros(1,numsteps);
-        tmp_num_clumps = zeros(1,numsteps);
-        
-        % loop over time and update according to growth equation
-        for s = 1:numsteps
-        
-            % grow all clusters in one deterministic vectorized step
-            V_arr_out = V_arr_out + dt.*lr.*V_arr_out.*(1-sum(V_arr_out)./max_total_pop);
-            
-            % if clusters die out, remove them
-            V_arr_out = V_arr_out(V_arr_out>=1);
-            
-            % update tmp_totpop
-            tmp_tot_pop(s) = sum(V_arr_out);
-            
-            % update tmp_num_clumps
-            tmp_num_clumps(s) = numel(V_arr_out);
-        
-        end
-        
-        % append total population array
-        tot_pop_out = [total_pop_arr, tmp_tot_pop];
-        
-        % append total number of clumps array
-        num_clumps_out = [num_clumps_arr, tmp_num_clumps];
                   
     end
 
