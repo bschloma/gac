@@ -440,39 +440,23 @@ end
                 
             case 2
                 % aggregation
-                
-                if nu_A > 0
-                    % find ids of clusters that will aggregate in this timestep
-                    agg_id = ids_arr(reaction_id);
-                    
-                    % get index of this aggregation reaction in A_mat
-                    lin_ind_of_this_agg = lin_inds_for_Amat(agg_id);
-                    
-                    % backout the ids of clusters involved in this aggregation
-                    % reaction (row + column of A_mat)
-                    [agg_row,agg_col] = ind2sub(size(A_mat),lin_ind_of_this_agg);
-                    
-                    % one of the clusters increases in size due to aggregation
-                    V_arr_out(agg_row) = V_arr_out(agg_row) + V_arr_out(agg_col);
-                    
-                    % the other one is removed from the array
-                    V_arr_out(agg_col) = [];
-                
-                else
-                    
-                    possible_inds = 1:numel(V_arr_out);
-                    first_ind = randi(numel(possible_inds));
-                    second_ind = first_ind;
-                    while second_ind == first_ind
-                        second_ind = randi(numel(possible_inds));
-                    end
-                                        
-                    V_arr_out(first_ind) = V_arr_out(first_ind) + V_arr_out(second_ind);
-                    
-                    V_arr_out(second_ind) = [];
-                    
-                end
                               
+                % find ids of clusters that will aggregate in this timestep
+                agg_id = ids_arr(reaction_id);
+                
+                % get index of this aggregation reaction in A_mat
+                lin_ind_of_this_agg = lin_inds_for_Amat(agg_id);
+                
+                % backout the ids of clusters involved in this aggregation
+                % reaction (row + column of A_mat)
+                [agg_row,agg_col] = ind2sub(size(A_mat),lin_ind_of_this_agg);
+                
+                % one of the clusters increases in size due to aggregation
+                V_arr_out(agg_row) = V_arr_out(agg_row) + V_arr_out(agg_col);
+                
+                % the other one is removed from the array
+                V_arr_out(agg_col) = [];
+                                          
             case 3
                 % sprout//fragment
                 
@@ -506,28 +490,22 @@ end
     % fill entries.
     function A_mat = updateA_mat()
         
-        if nu_A ~= 0
         
-            % make a square matrix based on the cluster size array
-            A_mat = zeros(numel(V_arr));
+        
+        % make a square matrix based on the cluster size array
+        A_mat = zeros(numel(V_arr));
+        
+        % loop over columns
+        for i = 1:(numel(V_arr)-1)
             
-            % loop over columns
-            for i = 1:(numel(V_arr)-1)
+            % loop over rows
+            for j = (i+1):numel(V_arr)
                 
-                % loop over rows
-                for j = (i+1):numel(V_arr)
-                    
-                    % fill entry accoring to generalized homogeneous aggregation
-                    % kernel
-                    A_mat(j,i) = la.*(V_arr(i).*V_arr(j)).^nu_A;
-                    
-                end
+                % fill entry accoring to generalized homogeneous aggregation
+                % kernel
+                A_mat(j,i) = la.*(V_arr(i).*V_arr(j)).^nu_A;
                 
             end
-            
-        else 
-            
-            A_mat = la.*ones(numel(V_arr));
             
         end
         
