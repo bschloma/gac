@@ -224,7 +224,7 @@ while t < Tmax
     % compute the probability of aggregation in this timestep.
     % A_mat is a lower triangular array that keeps track of the
     % proababilities for every possible aggregation reaction.
-    A_mat = updateA_mat();
+    A_mat = la.*tril((V_arr'*V_arr).^nu_A,-1);
     
     % extract the non-zero rates into a linear array
     lambda_A = A_mat(A_mat>0); 
@@ -485,33 +485,8 @@ end
                   
     end
 
-    
-    % function for updating aggregation matrix.  make new everytime and
-    % fill entries.
-    function A_mat = updateA_mat()
+   
         
-        
-        
-        % make a square matrix based on the cluster size array
-        A_mat = zeros(numel(V_arr));
-        
-        % loop over columns
-        for i = 1:(numel(V_arr)-1)
-            
-            % loop over rows
-            for j = (i+1):numel(V_arr)
-                
-                % fill entry accoring to generalized homogeneous aggregation
-                % kernel
-                A_mat(j,i) = la.*(V_arr(i).*V_arr(j)).^nu_A;
-                
-            end
-            
-        end
-        
-    end
-    
-    
 end
 
 
