@@ -271,21 +271,23 @@ while t < Tmax
     
     % choose reaction time based on the total probability rate of a
     % reaction happening.
-    %%%%%%%% made faster by avoiding exprnd %%%%%%%
-    %delta_t = exprnd(1./lambda_total);
+    
     % collect a random number.  If we've run out of pregenerated ones,
     % generate some new ones.
     if n + 1 < number_of_random_numbers_to_pre_generate
         random_number = lots_of_random_numbers(n+1);
         n = n + 1;
     else
-%         random_number = rand();
-%         
-%         if l_first_time_running_out_of_randns
-        disp('gac: ran out of pre-generated rns')
-%         end
-%         l_first_time_running_out_of_randns = 0;
+        disp('gac: ran out of pre-generated rns, generating new ones')
+
+        % generate new ones
         lots_of_random_numbers = rand(1,number_of_random_numbers_to_pre_generate);
+        
+        % collect the one we need
+        random_number = lots_of_random_numbers(1);
+        
+        % reset counter
+        n = 1;
         
     end
     
@@ -302,14 +304,16 @@ while t < Tmax
             random_number = lots_of_random_numbers(n+1);
             n = n + 1;
         else
-%         random_number = rand();
-%         
-%         if l_first_time_running_out_of_randns
-        disp('gac: ran out of pre-generated rns')
-%         end
-%         l_first_time_running_out_of_randns = 0;
-        lots_of_random_numbers = rand(1,number_of_random_numbers_to_pre_generate);
-
+            disp('gac: ran out of pre-generated rns, generating new ones')
+            
+            % generate new ones
+            lots_of_random_numbers = rand(1,number_of_random_numbers_to_pre_generate);
+            
+            % collect the one we need
+            random_number = lots_of_random_numbers(1);
+            
+            % reset counter
+            n = 1;
             
         end
         
