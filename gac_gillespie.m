@@ -439,8 +439,11 @@ end
             case 1
                 % collapse
 
+                % collapse id
+                collapse_id = ids_arr(reaction_id);
+                
                 % remove clusters that have collapsed from the cluster array.
-                V_arr_out(reaction_id) = [];
+                V_arr_out(collapse_id) = [];
                 
             case 2
                 % aggregation
