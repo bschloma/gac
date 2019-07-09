@@ -50,7 +50,7 @@
 % VCS:      github.com/bschloma/gac
 %
 
-function [V_arr,total_pop_arr,tvec,num_clumps_arr] = gac_gillespie(lr,la,lc,ls,Tmax,n0,nu_A,nu_F,lwritetxt,txtdir,txtname)
+function [V_arr,total_pop_arr,tvec,num_clumps_arr] = gac_gillespie(lr,la,lc,ls,Tmax,n0,nu_A,nu_F,max_total_pop,lwritetxt,txtdir,txtname)
 
 %% default values for input parameters
 
@@ -61,22 +61,22 @@ end
 
 % rate of cluster aggregation
 if ~exist('la','var')||isempty(la)
-    la = .1;
+    la = 1;
 end
 
 % rate of cluster collapse
 if ~exist('lc','var')||isempty(lc)
-    lc = .005;
+    lc = .1;%.005;
 end
 
 % rate of cluster sprouting
 if ~exist('ls','var')||isempty(ls)
-    ls = .1;
+    ls = 20;
 end
 
 % total simulation time
 if ~exist('Tmax','var')||isempty(Tmax)
-    Tmax = 24;
+    Tmax = 72;
 end
 
 % initial starting population of single cells
@@ -86,12 +86,17 @@ end
 
 % aggregation exponent
 if ~exist('nu_A','var')||isempty(nu_A)
-    nu_A = 2/3;
+    nu_A = 0;
 end
 
 % fragmentation exponent
 if ~exist('nu_F','var')||isempty(nu_F)
-    nu_F = 2/3;
+    nu_F = 0;
+end
+
+% carrying capacity
+if ~exist('max_total_pop','var')||isempty(max_total_pop)
+    max_total_pop = 1e5;
 end
 
 % logical for saving to txt file
@@ -118,22 +123,27 @@ rng('shuffle');
 % main object of the simulation:  array of cluster volumes
 if numel(n0)==1
     V_arr = ones(1,round(n0));
+    
+    % array for keeping track of number of clumps over time
+    num_clumps_arr = n0;
+
 elseif size(n0,1) > 1
     disp('gac error:  initial cluster size array n0 must have dim 1xM');
     return
 else
     V_arr = n0;
+    
+     % array for keeping track of number of clumps over time
+    num_clumps_arr = numel(n0);
+    
 end
 
 
 % array for keeping track of total population size
 total_pop_arr = sum(n0);
 
-% array for keeping track of number of clumps over time
-num_clumps_arr = numel(n0);
-
 % pregenerate lots of random numbers for speed.
-number_of_random_numbers_to_pre_generate = round(1000);
+number_of_random_numbers_to_pre_generate = round(100000);
 lots_of_random_numbers = rand(1,number_of_random_numbers_to_pre_generate);
 
 % counter for how many of the pre-generated random numbers have been used.
@@ -147,10 +157,19 @@ tvec = t;
 disp_time_marker = 1;
 disp_time_increment = 1;
 
+% for printing warning about random number usage
+l_first_time_running_out_of_randns = 1;
+
+% exponent for collapse
+nu_C = 0;
 
 %% fixed parameters
 % carrying capacity, sets maximum total population size.  
-max_total_pop = 10^(4);                       
+%max_total_pop = 10^(4);                       
+
+% growth timestep
+fraction_of_delta_t = 1;
+baseline_dt = .1;
 
 % logical for printing progress to screen
 l_print_progress = false;
@@ -194,7 +213,7 @@ while t < Tmax
           
     % compute probability of collapse as a function of cluster volume.
     % here, the relationship is linear in linear length dimension.
-    lambda_C = lc.*(V_arr).^(1/3);
+    lambda_C = lc.*(V_arr).^(nu_C);
     
     % create an array of ids labelling every possible collapse reaction
     ids_for_collapse = 1:numel(lambda_C);
@@ -205,7 +224,7 @@ while t < Tmax
     % compute the probability of aggregation in this timestep.
     % A_mat is a lower triangular array that keeps track of the
     % proababilities for every possible aggregation reaction.
-    A_mat = updateA_mat();
+    A_mat = la.*tril((V_arr'*V_arr).^nu_A,-1);
     
     % extract the non-zero rates into a linear array
     lambda_A = A_mat(A_mat>0); 
@@ -251,8 +270,28 @@ while t < Tmax
     all_labels = [label_for_lambda_C, label_for_lambda_A, label_for_lambda_F]; 
     
     % choose reaction time based on the total probability rate of a
-    % reaction happening
-    delta_t = exprnd(1./lambda_total);
+    % reaction happening.
+    
+    % collect a random number.  If we've run out of pregenerated ones,
+    % generate some new ones.
+    if n + 1 < number_of_random_numbers_to_pre_generate
+        random_number = lots_of_random_numbers(n+1);
+        n = n + 1;
+    else
+        disp('gac: ran out of pre-generated rns, generating new ones')
+
+        % generate new ones
+        lots_of_random_numbers = rand(1,number_of_random_numbers_to_pre_generate);
+        
+        % collect the one we need
+        random_number = lots_of_random_numbers(1);
+        
+        % reset counter
+        n = 1;
+        
+    end
+    
+    delta_t = (1/lambda_total).*log(1/random_number);
     
     % choose next reaction using the array of all possible reaction rates
     % BUT if next reaction time is greater than Tmax, don't execute it,
@@ -265,7 +304,17 @@ while t < Tmax
             random_number = lots_of_random_numbers(n+1);
             n = n + 1;
         else
-            random_number = rand();
+            disp('gac: ran out of pre-generated rns, generating new ones')
+            
+            % generate new ones
+            lots_of_random_numbers = rand(1,number_of_random_numbers_to_pre_generate);
+            
+            % collect the one we need
+            random_number = lots_of_random_numbers(1);
+            
+            % reset counter
+            n = 1;
+            
         end
         
         % get the id of the chosen reaction
@@ -334,6 +383,7 @@ end
             this_label = all_labels(reaction_id);
         else
             this_label  = 0;
+            delta_t = Tmax-t;
         end
         
         % create and output variable.  necessary to avoid referencing issues
@@ -345,10 +395,13 @@ end
         % construct a timestep for numerical integration.  can change
         % resolution here for better or worse accuracy.  Base timestep is
         % .01, if time between reactions gets small, use a smaller step.
-        dt = min(delta_t./10,.01);
+        %dt = min(delta_t./10,.01);
+        dt = min(delta_t.*fraction_of_delta_t,baseline_dt);
         
         % number of steps taken between reactions
-        numsteps = floor((delta_t - dt)/dt);
+        %numsteps = round((delta_t - dt)/dt);
+        numsteps = ceil(delta_t/dt);
+
         
         % update time array.  new variable name is needed to avoid
         % referencing issues with the nested function.
@@ -386,12 +439,15 @@ end
             case 1
                 % collapse
 
+                % collapse id
+                collapse_id = ids_arr(reaction_id);
+                
                 % remove clusters that have collapsed from the cluster array.
-                V_arr_out(reaction_id) = [];
+                V_arr_out(collapse_id) = [];
                 
             case 2
                 % aggregation
-                
+                              
                 % find ids of clusters that will aggregate in this timestep
                 agg_id = ids_arr(reaction_id);
                 
@@ -407,7 +463,7 @@ end
                 
                 % the other one is removed from the array
                 V_arr_out(agg_col) = [];
-                              
+                                          
             case 3
                 % sprout//fragment
                 
@@ -436,32 +492,8 @@ end
                   
     end
 
-    
-    % function for updating aggregation matrix.  make new everytime and
-    % fill entries.
-    function A_mat = updateA_mat()
+   
         
-        % make a square matrix based on the cluster size array
-        A_mat = zeros(numel(V_arr));
-        
-        % loop over columns
-        for i = 1:(numel(V_arr)-1)
-          
-            % loop over rows
-            for j = (i+1):numel(V_arr)
-                
-                % fill entry accoring to generalized homogeneous aggregation
-                % kernel
-                A_mat(j,i) = la.*(V_arr(i).*V_arr(j)).^nu_A;
-                
-            end
-            
-        end
-        
-     
-    end
-    
-    
 end
 
 
