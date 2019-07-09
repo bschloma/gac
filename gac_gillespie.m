@@ -17,7 +17,7 @@
 %
 % Inputs:   lr - (float) growth rate
 %           la - (float) aggregation rate
-%           lc - (float) collapse/dispersal rate
+%           le - (float) expulsion rate
 %           ls - (float) fragmentation/sprout rate
 %           Tmax - (float) simulation time to exit
 %           n0 - (int or 1x[number of clusters] array of floats/ints) specifies initial
@@ -50,7 +50,7 @@
 % VCS:      github.com/bschloma/gac
 %
 
-function [V_arr,total_pop_arr,tvec,num_clumps_arr] = gac_gillespie(lr,la,lc,ls,Tmax,n0,nu_A,nu_F,max_total_pop,lwritetxt,txtdir,txtname)
+function [V_arr,total_pop_arr,tvec,num_clumps_arr] = gac_gillespie(lr,la,le,ls,Tmax,n0,nu_A,nu_F,max_total_pop,lwritetxt,txtdir,txtname,nu_E)
 
 %% default values for input parameters
 
@@ -64,9 +64,9 @@ if ~exist('la','var')||isempty(la)
     la = 1;
 end
 
-% rate of cluster collapse
-if ~exist('lc','var')||isempty(lc)
-    lc = .1;%.005;
+% rate of cluster explusion
+if ~exist('le','var')||isempty(le)
+    le = .1;%.005;
 end
 
 % rate of cluster sprouting
@@ -114,6 +114,11 @@ if ~exist('txtname','var')||isempty(txtname)
     txtname = 'gacout';
 end
 
+% exponent for expulsion
+if ~exist('nu_E','var')||isempty(nu_E)
+    nu_E = 0;
+end
+
 % shuffle random number generator
 rng('shuffle');
 
@@ -159,9 +164,6 @@ disp_time_increment = 1;
 
 % for printing warning about random number usage
 l_first_time_running_out_of_randns = 1;
-
-% exponent for collapse
-nu_C = 0;
 
 %% fixed parameters
 % carrying capacity, sets maximum total population size.  
@@ -211,15 +213,15 @@ while t < Tmax
         disp_time_marker = disp_time_marker + disp_time_increment;
     end   
           
-    % compute probability of collapse as a function of cluster volume.
+    % compute probability of expulsion as a function of cluster volume.
     % here, the relationship is linear in linear length dimension.
-    lambda_C = lc.*(V_arr).^(nu_C);
+    lambda_E = le.*(V_arr).^(nu_E);
     
-    % create an array of ids labelling every possible collapse reaction
-    ids_for_collapse = 1:numel(lambda_C);
+    % create an array of ids labelling every possible explusion reaction
+    ids_for_expulsion = 1:numel(lambda_E);
     
-    % create an accesory array that labels (1) these reactions as "collapse"
-    label_for_lambda_C = 1.*ones(1,numel(lambda_C));
+    % create an accesory array that labels (1) these reactions as "expulsion"
+    label_for_lambda_E = 1.*ones(1,numel(lambda_E));
     
     % compute the probability of aggregation in this timestep.
     % A_mat is a lower triangular array that keeps track of the
@@ -254,20 +256,20 @@ while t < Tmax
     ids_for_frag = 1:numel(lambda_F);
     
     % assemble all of the reaction ids into a single linear array
-    ids_arr = [ids_for_collapse, ids_for_agg, ids_for_frag];
+    ids_arr = [ids_for_expulsion, ids_for_agg, ids_for_frag];
     
     % create labels (3) that keep track of these possible reactions as
     % "fragmentation" 
     label_for_lambda_F = 3.*ones(1,numel(lambda_F));
     
     % assemble all reaction probability rates into a single linear array
-    lambda_arr = [lambda_C, lambda_A, lambda_F];
+    lambda_arr = [lambda_E, lambda_A, lambda_F];
     
     % compute total proabability rate of a reaction happening
     lambda_total = sum(lambda_arr);
     
     % assemble all labels into a single linear array
-    all_labels = [label_for_lambda_C, label_for_lambda_A, label_for_lambda_F]; 
+    all_labels = [label_for_lambda_E, label_for_lambda_A, label_for_lambda_F]; 
     
     % choose reaction time based on the total probability rate of a
     % reaction happening.
@@ -437,13 +439,13 @@ end
         %% update cluster size array based on which reaction is happening
         switch this_label
             case 1
-                % collapse
+                % explusion
 
-                % collapse id
-                collapse_id = ids_arr(reaction_id);
+                % explusion id
+                expulsion_id = ids_arr(reaction_id);
                 
-                % remove clusters that have collapsed from the cluster array.
-                V_arr_out(collapse_id) = [];
+                % remove clusters that have been expelled from the cluster array.
+                V_arr_out(expulsion_id) = [];
                 
             case 2
                 % aggregation
