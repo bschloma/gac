@@ -174,7 +174,7 @@ fraction_of_delta_t = 1;
 baseline_dt = .1;
 
 % logical for printing progress to screen
-l_print_progress = false;
+l_print_progress = true;
 
 % for writing to txt file, set things up, print a header and time zero data
 if lwritetxt
@@ -217,6 +217,10 @@ while t < Tmax
     % here, the relationship is linear in linear length dimension.
     lambda_E = le.*(V_arr).^(nu_E);
     
+    if sum(lambda_E)==0
+        lambda_E = [];
+    end
+    
     % create an array of ids labelling every possible explusion reaction
     ids_for_expulsion = 1:numel(lambda_E);
     
@@ -228,7 +232,7 @@ while t < Tmax
     % proababilities for every possible aggregation reaction.
     if la > 0
         if nu_A ==0
-            lambda_A = la.*(.5.*numel(V_arr) - numel(V_arr));
+            lambda_A = la.*(.5.*(numel(V_arr).^2 - numel(V_arr)));
             
             if numel(V_arr) == 1
                 lambda_A = [];
@@ -273,6 +277,10 @@ while t < Tmax
     % size 2 to sprout.
     lambda_F = ls.*(V_arr >= 2).*(V_arr).^(nu_F);
     
+    if sum(lambda_F)==0
+        lambda_F = [];
+    end
+    
     % assign ids to each of the possible fragmentation reactions.
     ids_for_frag = 1:numel(lambda_F);
     
@@ -295,25 +303,10 @@ while t < Tmax
     % choose reaction time based on the total probability rate of a
     % reaction happening.
     
-    % collect a random number.  If we've run out of pregenerated ones,
-    % generate some new ones.
-    if n + 1 < number_of_random_numbers_to_pre_generate
-        random_number = lots_of_random_numbers(n+1);
-        n = n + 1;
-    else
-        disp('gac: ran out of pre-generated rns, generating new ones')
-
-        % generate new ones
-        lots_of_random_numbers = rand(1,number_of_random_numbers_to_pre_generate);
-        
-        % collect the one we need
-        random_number = lots_of_random_numbers(1);
-        
-        % reset counter
-        n = 1;
-        
-    end
-    
+    % select a random number from pre generated list.
+    % if we've run out, generate some new ones.
+    [random_number, n, lots_of_random_numbers] = select_a_random_number();
+                        
     delta_t = (1/lambda_total).*log(1/random_number);
     
     % choose next reaction using the array of all possible reaction rates
@@ -321,24 +314,9 @@ while t < Tmax
     % only update with growth.  this is denoted with reaction_id = 0.
     if t+delta_t <= Tmax
         
-        % collect a random number.  If we've run out of pregenerated ones,
-        % generate some new ones.
-        if n + 1 < number_of_random_numbers_to_pre_generate
-            random_number = lots_of_random_numbers(n+1);
-            n = n + 1;
-        else
-            disp('gac: ran out of pre-generated rns, generating new ones')
-            
-            % generate new ones
-            lots_of_random_numbers = rand(1,number_of_random_numbers_to_pre_generate);
-            
-            % collect the one we need
-            random_number = lots_of_random_numbers(1);
-            
-            % reset counter
-            n = 1;
-            
-        end
+        % select a random number from pre generated list.
+        % if we've run out, generate some new ones.
+        [random_number, n, lots_of_random_numbers] = select_a_random_number();
         
         % get the id of the chosen reaction
         reaction_id = find(random_number < cumsum(lambda_arr)./lambda_total,1);
@@ -491,46 +469,16 @@ end
                     l_same_inds = 1;
                     
                     while l_same_inds
-                        % collect a random number.  If we've run out of pregenerated ones,
-                        % generate some new ones.
-                        if n + 1 < number_of_random_numbers_to_pre_generate
-                            random_number = lots_of_random_numbers(n+1);
-                            n = n + 1;
-                        else
-                            disp('gac: ran out of pre-generated rns, generating new ones')
-                            
-                            % generate new ones
-                            lots_of_random_numbers = rand(1,number_of_random_numbers_to_pre_generate);
-                            
-                            % collect the one we need
-                            random_number = lots_of_random_numbers(1);
-                            
-                            % reset counter
-                            n = 1;
-                            
-                        end
+                        % select a random number from pre generated list.
+                        % if we've run out, generate some new ones.
+                        [random_number, n, lots_of_random_numbers] = select_a_random_number();  
                         
                         agg_row = ceil(random_number.*numel(V_arr_out));
                         
-                        % collect a random number.  If we've run out of pregenerated ones,
-                        % generate some new ones.
-                        if n + 1 < number_of_random_numbers_to_pre_generate
-                            random_number = lots_of_random_numbers(n+1);
-                            n = n + 1;
-                        else
-                            disp('gac: ran out of pre-generated rns, generating new ones')
-                            
-                            % generate new ones
-                            lots_of_random_numbers = rand(1,number_of_random_numbers_to_pre_generate);
-                            
-                            % collect the one we need
-                            random_number = lots_of_random_numbers(1);
-                            
-                            % reset counter
-                            n = 1;
-                            
-                        end
-                        
+                        % select a random number from pre generated list.
+                        % if we've run out, generate some new ones.
+                        [random_number, n, lots_of_random_numbers] = select_a_random_number();
+                                               
                         agg_col = ceil(random_number.*numel(V_arr_out));
                         
                         if agg_col~=agg_row
@@ -575,6 +523,27 @@ end
         num_clumps_out(end) =  numel(V_arr_out); 
         
                   
+    end
+
+    function [random_number, n_out, lots_of_random_numbers_out] = select_a_random_number()
+        if n + 1 < number_of_random_numbers_to_pre_generate
+            random_number = lots_of_random_numbers(n+1);
+            n_out = n + 1;
+            lots_of_random_numbers_out = lots_of_random_numbers;
+        else
+            disp('gac: ran out of pre-generated rns, generating new ones')
+            
+            % generate new ones
+            lots_of_random_numbers_out = rand(1,number_of_random_numbers_to_pre_generate);
+            
+            % collect the one we need
+            random_number = lots_of_random_numbers_out(1);
+            
+            % reset counter
+            n_out = 1;
+            
+        end
+        
     end
 
    
