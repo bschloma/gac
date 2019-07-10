@@ -209,7 +209,7 @@ while t < Tmax
             
     % print update to console
     if l_print_progress && t >= disp_time_marker
-        disp(['time = ' num2str(t) ' number of clusters = ' num2str(numel(V_arr))])
+        disp(['time = ' num2str(t,2) ' number of clusters = ' num2str(numel(V_arr))])
         disp_time_marker = disp_time_marker + disp_time_increment;
     end   
           
@@ -226,10 +226,36 @@ while t < Tmax
     % compute the probability of aggregation in this timestep.
     % A_mat is a lower triangular array that keeps track of the
     % proababilities for every possible aggregation reaction.
-    A_mat = la.*tril((V_arr'*V_arr).^nu_A,-1);
-    
-    % extract the non-zero rates into a linear array
-    lambda_A = A_mat(A_mat>0); 
+    if la > 0
+        if nu_A ==0
+            lambda_A = la.*(.5.*numel(V_arr) - numel(V_arr));
+            
+            if numel(V_arr) == 1
+                lambda_A = [];
+            end
+            
+        else
+            A_mat = la.*tril((V_arr'*V_arr).^nu_A,-1);
+            
+            % extract the non-zero rates into a linear array
+            lambda_A = A_mat(A_mat>0);
+            
+            % keep track of the indices of the non-zero reactions in A_mat's
+            % coordinates.  this will be used to identify the clusters in V_arr
+            % that are participating in the reaction.
+            lin_inds_for_Amat = find(A_mat>0);
+        end
+    else
+        A_mat = 0;
+        
+        % extract the non-zero rates into a linear array
+        lambda_A = A_mat(A_mat>0);
+        
+        % keep track of the indices of the non-zero reactions in A_mat's
+        % coordinates.  this will be used to identify the clusters in V_arr
+        % that are participating in the reaction.
+        lin_inds_for_Amat = find(A_mat>0);
+    end
     
     % double check dimensions
     if size(lambda_A,1) > 1
@@ -239,11 +265,6 @@ while t < Tmax
     % create labels (2) that keep track of these possible reactions as
     % "aggregation"
     label_for_lambda_A = 2.*ones(1,numel(lambda_A));
-    
-    % keep track of the indices of the non-zero reactions in A_mat's
-    % coordinates.  this will be used to identify the clusters in V_arr
-    % that are participating in the reaction.
-    lin_inds_for_Amat = find(A_mat>0);
     
     % assign ids to each of the possible aggregation reactions.
     ids_for_agg = 1:numel(lambda_A);
@@ -450,15 +471,77 @@ end
             case 2
                 % aggregation
                               
-                % find ids of clusters that will aggregate in this timestep
-                agg_id = ids_arr(reaction_id);
+                if nu_A > 0
+                    % find ids of clusters that will aggregate in this timestep
+                    agg_id = ids_arr(reaction_id);
+                    
+                    % get index of this aggregation reaction in A_mat
+                    lin_ind_of_this_agg = lin_inds_for_Amat(agg_id);
+                    
                 
-                % get index of this aggregation reaction in A_mat
-                lin_ind_of_this_agg = lin_inds_for_Amat(agg_id);
+                    % backout the ids of clusters involved in this aggregation
+                    % reaction (row + column of A_mat) CAN replace size(A_mat)
+                    % with numel(V_arr)^2????
+                    [agg_row,agg_col] = ind2sub(size(A_mat),lin_ind_of_this_agg);
                 
-                % backout the ids of clusters involved in this aggregation
-                % reaction (row + column of A_mat)
-                [agg_row,agg_col] = ind2sub(size(A_mat),lin_ind_of_this_agg);
+                elseif nu_A == 0
+                    
+                    % simply pick two clusters at random
+                    
+                    l_same_inds = 1;
+                    
+                    while l_same_inds
+                        % collect a random number.  If we've run out of pregenerated ones,
+                        % generate some new ones.
+                        if n + 1 < number_of_random_numbers_to_pre_generate
+                            random_number = lots_of_random_numbers(n+1);
+                            n = n + 1;
+                        else
+                            disp('gac: ran out of pre-generated rns, generating new ones')
+                            
+                            % generate new ones
+                            lots_of_random_numbers = rand(1,number_of_random_numbers_to_pre_generate);
+                            
+                            % collect the one we need
+                            random_number = lots_of_random_numbers(1);
+                            
+                            % reset counter
+                            n = 1;
+                            
+                        end
+                        
+                        agg_row = ceil(random_number.*numel(V_arr_out));
+                        
+                        % collect a random number.  If we've run out of pregenerated ones,
+                        % generate some new ones.
+                        if n + 1 < number_of_random_numbers_to_pre_generate
+                            random_number = lots_of_random_numbers(n+1);
+                            n = n + 1;
+                        else
+                            disp('gac: ran out of pre-generated rns, generating new ones')
+                            
+                            % generate new ones
+                            lots_of_random_numbers = rand(1,number_of_random_numbers_to_pre_generate);
+                            
+                            % collect the one we need
+                            random_number = lots_of_random_numbers(1);
+                            
+                            % reset counter
+                            n = 1;
+                            
+                        end
+                        
+                        agg_col = ceil(random_number.*numel(V_arr_out));
+                        
+                        if agg_col~=agg_row
+                            l_same_inds = 0;
+                        end
+                    end
+                
+                else
+                    disp('error in gac_gillespie: nu_A must be > 0')
+                    return
+                end
                 
                 % one of the clusters increases in size due to aggregation
                 V_arr_out(agg_row) = V_arr_out(agg_row) + V_arr_out(agg_col);
