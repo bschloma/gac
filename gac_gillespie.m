@@ -177,6 +177,14 @@ l_first_time_running_out_of_randns = 1;
 fraction_of_delta_t = 1;
 baseline_dt = .1;
 
+% include maximum time between reactions. since growth is determinsitc,
+% propensity functions may change substantially due to growth (i.e., if
+% system starts our with all monomers, probability of fragmentation is
+% zero, but as clusters grow, this probability jumps to non-zero. after
+% this time, essentially check again to see if any reactions could happen
+% sooner than previously predicted.
+max_time_between_reactions = min((1/growth_rate)*log(2), Tmax);
+
 % logical for printing progress to screen
 l_print_progress = true;
 
@@ -313,23 +321,33 @@ while t < Tmax
                         
     delta_t = (1/lambda_total).*log(1/random_number);
     
+   
     % choose next reaction using the array of all possible reaction rates
     % BUT if next reaction time is greater than Tmax, don't execute it,
     % only update with growth.  this is denoted with reaction_id = 0.
-    if t+delta_t <= Tmax
+    if delta_t <= max_time_between_reactions
         
-        % select a random number from pre generated list.
-        % if we've run out, generate some new ones.
-        [random_number, n, lots_of_random_numbers] = select_a_random_number();
-        
-        % get the id of the chosen reaction
-        reaction_id = find(random_number < cumsum(lambda_arr)./lambda_total,1);
-    
+        if t+delta_t <= Tmax
+            
+            
+            % select a random number from pre generated list.
+            % if we've run out, generate some new ones.
+            [random_number, n, lots_of_random_numbers] = select_a_random_number();
+            
+            % get the id of the chosen reaction
+            reaction_id = find(random_number < cumsum(lambda_arr)./lambda_total,1);
+            
+            
+            
+        else
+            reaction_id = 0;
+            delta_t = Tmax-t;
+            
+        end
     else
-        reaction_id = 0;
-        
+        delta_t = max_time_between_reactions;
+        reaction_id = -1;
     end
-
     
     % if there's a reaction to happen, call the update routine and update
     % the output arrays
@@ -388,7 +406,7 @@ end
             this_label = all_labels(reaction_id);
         else
             this_label  = 0;
-            delta_t = Tmax-t;
+            
         end
         
         % create and output variable.  necessary to avoid referencing issues
