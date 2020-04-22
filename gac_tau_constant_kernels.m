@@ -1,6 +1,6 @@
 % Program:  gac_tau_constant_kernels.m
 
-function [cluster_sizes,total_pop_arr,tvec,num_clumps_arr] = gac_tau_constant_kernels(growth_rate,aggregation_rate,expulsion_rate,fragmentation_rate,Tmax,n0,max_total_pop)
+function [cluster_sizes,total_pop_arr,tvec,num_clumps_arr] = gac_tau_constant_kernels(growth_rate,aggregation_rate,expulsion_rate,fragmentation_rate,Tmax,n0,max_total_pop,tau)
 
 %% default values for input parameters
 
@@ -40,6 +40,10 @@ if ~exist('max_total_pop','var')||isempty(max_total_pop)
     max_total_pop = 1e5;
 end
 
+% tau
+if ~exist('tau','var')||isempty(tau)
+    tau = 0.001;
+end
 
 % shuffle random number generator
 rng('shuffle');
@@ -87,16 +91,16 @@ disp_time_increment = 1;
 
 
 %% fixed parameters
-% tau -- fixed for now
-tau = .05;
-                   
+
+% tau for timestep--fix for now
+%tau = .001;
+
 % growth timestep
 fraction_of_delta_t = 1;
 baseline_dt = .1;
 
 % logical for printing progress to screen
 l_print_progress = false;
-
 
 %% main simulation.  loop over time.
 while t < Tmax 
@@ -106,9 +110,7 @@ while t < Tmax
         disp(['time = ' num2str(t,2) ' number of clusters = ' num2str(numel(cluster_sizes))])
         disp_time_marker = disp_time_marker + disp_time_increment;
     end   
-          
-   
-        
+           
    %% growth (deterministic) - do this first
    
    % construct a timestep for numerical integration.  can change
@@ -122,31 +124,43 @@ while t < Tmax
    numsteps = ceil(tau/dt);
    
    
-   % update time array.  new variable name is needed to avoid
-   % referencing issues with the nested function.
-   tvec = [tvec, linspace(t+dt, t+tau, numsteps)];
+   new_tvec = linspace(t+dt, t+tau, numsteps);
    
-   % temporary arrays to be updated during numerical integration
-   tmp_tot_pop = zeros(1,numsteps);
-   tmp_num_clumps = zeros(1,numsteps);
+   tmp_tot_pop = exp(growth_rate.*(new_tvec(end)-t))./((1/total_pop_arr(end)) + (1/max_total_pop).*(exp(growth_rate.*(new_tvec(end)-t)) - 1));
+   tmp_num_clumps = num_clumps_arr(end).*ones(1,numsteps);
    
-   % loop over time and update according to growth equation
-   for s = 1:numsteps
-       
-       % grow all clusters in one deterministic vectorized step
-       cluster_sizes = cluster_sizes + dt.*growth_rate.*cluster_sizes.*(1-sum(cluster_sizes)./max_total_pop);
-       
-       % if clusters die out, remove them
-       %cluster_sizes_out = cluster_sizes_out(cluster_sizes_out>=1);
-       
-       % update tmp_totpop
-       tmp_tot_pop(s) = sum(cluster_sizes);
-       
-       % update tmp_num_clumps
-       tmp_num_clumps(s) = numel(cluster_sizes);
-       
-   end
-   
+   cluster_sizes = exp(growth_rate.*(new_tvec(end)-t))./((1./cluster_sizes) + (total_pop_arr(end)./max_total_pop./cluster_sizes).*(exp(growth_rate.*(new_tvec(end)-t)) - 1));
+%   
+%    Unneccesary, use analytic form above.
+%    % update time array.  new variable name is needed to avoid
+%    % referencing issues with the nested function.
+%    tvec = [tvec, linspace(t+dt, t+tau, numsteps)];
+%    
+%    tmp_tot_pop = exp(r.*(tvec-
+%    % temporary arrays to be updated during numerical integration
+%    tmp_tot_pop = zeros(1,numsteps);
+%    tmp_num_clumps = zeros(1,numsteps);
+%    
+%    
+%    % loop over time and update according to growth equation
+%    for s = 1:numsteps
+%        
+%        % grow all clusters in one deterministic vectorized step
+%        cluster_sizes = cluster_sizes + dt.*growth_rate.*cluster_sizes.*(1-sum(cluster_sizes)./max_total_pop);
+%        
+%        % if clusters die out, remove them
+%        %cluster_sizes_out = cluster_sizes_out(cluster_sizes_out>=1);
+%        
+%        % update tmp_totpop
+%        tmp_tot_pop(s) = sum(cluster_sizes);
+%        
+%        % update tmp_num_clumps
+%        tmp_num_clumps(s) = numel(cluster_sizes);
+%        
+%    end
+
+   % append time array
+   tvec = [tvec, new_tvec];
    % append total population array
    total_pop_arr = [total_pop_arr, tmp_tot_pop];
    
@@ -158,7 +172,9 @@ while t < Tmax
    t = t + tau;
     %% fragmentation
     % do by each cluster
-    num_frag_events_for_each_cluster = poissrnd(fragmentation_rate*tau,1,numel(cluster_sizes));
+     nu = 1;
+    num_frag_events_for_each_cluster = poissrnd(fragmentation_rate.*tau.*cluster_sizes.^nu,1,numel(cluster_sizes));
+   % num_frag_events_for_each_cluster = poissrnd(fragmentation_rate*tau,1,numel(cluster_sizes));
     
     if sum(num_frag_events_for_each_cluster) > 0
         num_frag_events_for_each_cluster([cluster_sizes - num_frag_events_for_each_cluster] < 1 ) = 0;
