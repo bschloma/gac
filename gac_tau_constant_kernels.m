@@ -70,7 +70,7 @@ end
 total_pop_arr = sum(n0);
 
 % pregenerate lots of random numbers for speed.
-number_of_random_numbers_to_pre_generate = round(1e7);
+number_of_random_numbers_to_pre_generate = round(1e6);
 lots_of_random_numbers = rand(1,number_of_random_numbers_to_pre_generate);
 max_allowed_number_of_random_numbers = 1e8;
 
