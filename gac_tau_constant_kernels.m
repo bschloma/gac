@@ -105,7 +105,7 @@ fraction_of_delta_t = 1;
 baseline_dt = .1;
 
 % logical for printing progress to screen
-l_print_progress = false;
+l_print_progress = true;
 
 %% main simulation.  loop over time.
 while t < Tmax 
@@ -151,10 +151,20 @@ while t < Tmax
    %% fragmentation
    % do by each cluster
    total_fragmentation_rate = fragmentation_rate.*(cluster_sizes.*(1-sum(cluster_sizes)./max_total_pop)).^fragmentation_exponent;
+   %%%%%%%%%%%%%%% old way
    num_frag_events_for_each_cluster = poissrnd(total_fragmentation_rate.*tau,1,numel(cluster_sizes));
+   
+   %%%%%%%%%%%%% new way
+%    number_of_rns_per_cluster = max(ceil(10*max(total_fragmentation_rate.*tau)./0.7),2);
+%    [random_numbers, n, lots_of_random_numbers] = select_x_random_numbers(numel(cluster_sizes)*number_of_rns_per_cluster);
+%    random_numbers = reshape(random_numbers,numel(cluster_sizes),number_of_rns_per_cluster);
+%    [num_frag_events_for_each_cluster,n,lots_of_random_numbers] = convert_uniform_rns_to_poisson(random_numbers,[total_fragmentation_rate.*tau]');
+%     num_frag_events_for_each_cluster = num_frag_events_for_each_cluster';
+    %%%%%%%%%%%%%%%%
     
+    num_frag_events_for_each_cluster([cluster_sizes - num_frag_events_for_each_cluster] < 1 ) = 0;
+
     if sum(num_frag_events_for_each_cluster) > 0
-        num_frag_events_for_each_cluster([cluster_sizes - num_frag_events_for_each_cluster] < 1 ) = 0;
         
         cluster_sizes = cluster_sizes - num_frag_events_for_each_cluster;
         cluster_sizes = [cluster_sizes, ones(1,sum(num_frag_events_for_each_cluster))];
@@ -206,7 +216,41 @@ while t < Tmax
     
 end
     
-    
+%%%%%%%%%%%%% not in use yet
+    function [r,n_out,lots_of_random_numbers_out] = convert_uniform_rns_to_poisson(u,lambda)
+        l_success = 0;
+        counter = zeros(size(u,1),1);
+        number_of_rns_to_select_if_needed = size(u,2);%max(ceil(10.*max(lambda)./0.7),2);
+        
+        if numel(lambda)==1 && size(u,1)>1
+            lambda = repmat(lambda,size(u,1),1);
+        end
+        
+        while l_success==0
+            tmp = cumprod(u,2) < exp(-lambda);
+
+            [~,r] = max(tmp,[],2);
+            r = r-1;
+            r(r==0 & tmp(:,1)==0)= NaN;
+            
+            if sum(isnan(r)) > 0
+                [random_numbers, n_out, lots_of_random_numbers_out] = select_x_random_numbers(number_of_rns_to_select_if_needed*size(u,1));
+                random_numbers = reshape(random_numbers,size(u,1),number_of_rns_to_select_if_needed);
+                u =  repmat(~isnan(r),1,size(u,2)).*u + repmat(isnan(r),1,size(u,2)).*random_numbers;
+                counter = counter + isnan(r).*size(u,2);
+            else
+                l_success=1;
+                r = r+counter;
+                n_out = n;
+                lots_of_random_numbers_out = lots_of_random_numbers;
+            end
+            
+        end
+        
+        
+        
+    end
+
      function [random_numbers, n_out, lots_of_random_numbers_out] = select_x_random_numbers(x)
          
        
@@ -249,60 +293,7 @@ end
 
 
 
-%% scrap
-%  % compute probability of expulsion as a function of cluster volume.
-%     % here, the relationship is linear in linear length dimension.
-%     lambda_E = expulsion_rate.*ones(1,numel(cluster_sizes));
-%     
-%     % create an array of ids labelling every possible explusion reaction
-%     ids_for_expulsion = 1:numel(lambda_E);
-%     
-%     % create an accesory array that labels (1) these reactions as "expulsion"
-%     label_for_lambda_E = 1.*ones(1,numel(lambda_E));
-%     
-%     %aggregation rates
-%     number_of_possible_agg_reactions = round(.5.*(numel(cluster_sizes).^2 - numel(cluster_sizes)));
-%     lambda_A = aggregation_rate.*ones(1,number_of_possible_agg_reactions);
-%    
-%      % assign ids to each of the possible aggregation reactions.
-%     ids_for_agg = 1:numel(lambda_A);
-%     
-%     % create labels (2) that keep track of these possible reactions as
-%     % "aggregation"
-%     label_for_lambda_A = 2.*ones(1,numel(lambda_A));
-%         
-%     % compute probability of fragmentation.  require clusters to be of at least
-%     % size 2 to fragment. contains zeros.
-%     lambda_F = fragmentation_rate.*(cluster_sizes >= 2).*ones(1,numel(cluster_sizes));
-%     
-%      % create labels (3) that keep track of these possible reactions as
-%     % "fragmentation" 
-%     label_for_lambda_F = 3.*ones(1,numel(lambda_F));
-%     
-%     % assign ids to each of the possible fragmentation reactions.
-%     ids_for_frag = 1:numel(lambda_F);
-%     
-%     % assemble all of the reaction ids into a single linear array
-%     ids_arr = [ids_for_expulsion, ids_for_agg, ids_for_frag];
-%     
-%     % assemble all reaction probability rates into a single linear array
-%     lambda_arr = [lambda_E, lambda_A, lambda_F];
-%     
-%     % compute total proabability rate of a reaction happening
-%     lambda_total = sum(lambda_arr);
-%     
-%     % assemble all labels into a single linear array
-%     all_labels = [label_for_lambda_E, label_for_lambda_A, label_for_lambda_F]; 
-%     
-%     number_of_aggregation_events = poissrnd(sum(lambda_A)*tau);
-%     
-%     number_of_fragmentation_events = min(floor(sum(cluster_sizes(cluster_sizes > 2))),poissrnd(sum(lambda_F)*tau));
-% 
-%     
-%     
-%     
-%     
-%     
+ 
     
     
     
