@@ -1,6 +1,6 @@
 % Program:  gac_tau_constant_kernels.m
 
-function [cluster_sizes,total_pop_arr,tvec,num_clumps_arr] = gac_tau_constant_kernels(growth_rate,aggregation_rate,expulsion_rate,fragmentation_rate,Tmax,n0,max_total_pop,tau,fragmentation_exponent)
+function [cluster_sizes,total_pop_arr,tvec,num_clumps_arr] = gac_tau_constant_kernels(growth_rate,aggregation_rate,expulsion_rate,fragmentation_rate,Tmax,n0,max_total_pop,tau,fragmentation_exponent,l_demographic_noise)
 
 %% default values for input parameters
 
@@ -50,6 +50,9 @@ if ~exist('fragmentation_exponent','var')||isempty(fragmentation_exponent)
     fragmentation_exponent = 0;
 end
 
+if ~exist('l_demographic_noise','var')||isempty(l_demographic_noise)
+    l_demographic_noise = 0;
+end
 % shuffle random number generator
 rng('shuffle');
 
@@ -126,14 +129,47 @@ while t < Tmax
    
    % number of steps taken between reactions
    %numsteps = round((delta_t - dt)/dt);
-   numsteps = ceil(tau/dt); 
-              
-   new_tvec = linspace(t+dt, t+tau, numsteps);
+   numsteps = ceil(tau/dt);
    
-   tmp_tot_pop = exp(growth_rate.*(new_tvec(end)-t))./((1/total_pop_arr(end)) + (1/max_total_pop).*(exp(growth_rate.*(new_tvec(end)-t)) - 1));
-   tmp_num_clumps = num_clumps_arr(end).*ones(1,numsteps);
-   
-   cluster_sizes = exp(growth_rate.*(new_tvec(end)-t))./((1./cluster_sizes) + (total_pop_arr(end)./max_total_pop./cluster_sizes).*(exp(growth_rate.*(new_tvec(end)-t)) - 1));
+   if l_demographic_noise
+       % temporary arrays to be updated during numerical integration
+       tmp_tot_pop = zeros(1,numsteps);
+       tmp_num_clumps = zeros(1,numsteps);
+       
+       dBt = sqrt(dt).*randn(numsteps,numel(cluster_sizes));
+       
+       tmp_cluster_sizes_mat = zeros(numsteps+1,numel(cluster_sizes));
+       tmp_cluster_sizes_mat(1,:) = cluster_sizes;
+       new_tvec = linspace(t+dt, t+tau, numsteps);
+
+       % loop over time and update according to growth equation
+       for s = 1:numsteps
+           
+           tmp_cluster_sizes = cluster_sizes;
+           tmp_cluster_sizes = tmp_cluster_sizes + dt.*growth_rate.*tmp_cluster_sizes.*(1-sum(tmp_cluster_sizes)./max_total_pop) ...
+               + sqrt(growth_rate.*tmp_cluster_sizes.*max((1-sum(tmp_cluster_sizes)./max_total_pop),0)).*dBt(s,:);
+           
+           tmp_cluster_sizes_mat(s+1,:) = tmp_cluster_sizes;
+           
+           non_zero_ids = find(sum([tmp_cluster_sizes_mat(1:s+1,:)<1],1) == 0);
+           
+           % update tmp_totpop
+           tmp_tot_pop(s) = sum(tmp_cluster_sizes(non_zero_ids));
+           
+           % update tmp_num_clumps
+           tmp_num_clumps(s) = numel(tmp_cluster_sizes(non_zero_ids));
+           
+       end
+       cluster_sizes = tmp_cluster_sizes(non_zero_ids);
+   else
+       
+       
+       tmp_tot_pop = exp(growth_rate.*(new_tvec(end)-t))./((1/total_pop_arr(end)) + (1/max_total_pop).*(exp(growth_rate.*(new_tvec(end)-t)) - 1));
+       tmp_num_clumps = num_clumps_arr(end).*ones(1,numsteps);
+       
+       cluster_sizes = exp(growth_rate.*(new_tvec(end)-t))./((1./cluster_sizes) + (total_pop_arr(end)./max_total_pop./cluster_sizes).*(exp(growth_rate.*(new_tvec(end)-t)) - 1));
+
+   end
    
    % append time array
    tvec = [tvec, new_tvec];
@@ -149,19 +185,19 @@ while t < Tmax
    
    %% fragmentation
    % do by each cluster
-   total_fragmentation_rate = fragmentation_rate.*(cluster_sizes.*(1-sum(cluster_sizes)./max_total_pop)).^fragmentation_exponent;
-   %%%%%%%%%%%%%%% old way
+   % note how the exponent is implemented, only on the size. this is the
+   % proper way to link frag to growth.
+   total_fragmentation_rate = fragmentation_rate.*(cluster_sizes.^fragmentation_exponent.*(1-sum(cluster_sizes)./max_total_pop));
+   
+   % this is a speed bottleneck. consider a scheme of converting
+   % pregenerated uniform random numbers to poissons
    num_frag_events_for_each_cluster = poissrnd(total_fragmentation_rate.*tau,1,numel(cluster_sizes));
    
-   %%%%%%%%%%%%% new way
-%    number_of_rns_per_cluster = max(ceil(10*max(total_fragmentation_rate.*tau)./0.7),2);
-%    [random_numbers, n, lots_of_random_numbers] = select_x_random_numbers(numel(cluster_sizes)*number_of_rns_per_cluster);
-%    random_numbers = reshape(random_numbers,numel(cluster_sizes),number_of_rns_per_cluster);
-%    [num_frag_events_for_each_cluster,n,lots_of_random_numbers] = convert_uniform_rns_to_poisson(random_numbers,[total_fragmentation_rate.*tau]');
-%     num_frag_events_for_each_cluster = num_frag_events_for_each_cluster';
-    %%%%%%%%%%%%%%%%
-    
-    num_frag_events_for_each_cluster([cluster_sizes - num_frag_events_for_each_cluster] < 1 ) = 0;
+   % forbid clusters from fragmenting to size zero or less. this is what
+   % advanced tau-leaping methods avoid with more complicated schemes for automatically picking
+   % tau. these schemes don't seem to apply well to agg-frag systems,
+   % however.
+   num_frag_events_for_each_cluster([cluster_sizes - num_frag_events_for_each_cluster] < 1 ) = 0;
 
     if sum(num_frag_events_for_each_cluster) > 0
         
